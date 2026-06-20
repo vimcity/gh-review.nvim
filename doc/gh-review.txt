@@ -1,0 +1,207 @@
+*gh-review.nvim*                                   GitHub PR review inside Diffview
+
+===============================================================================
+CONTENTS                                                      *gh-review-contents*
+
+1. Introduction ................................................ |gh-review-intro|
+2. Commands .................................................... |gh-review-commands|
+3. Review Keymaps .............................................. |gh-review-keymaps|
+4. Inbox ....................................................... |gh-review-inbox|
+5. Thread List ................................................. |gh-review-threads|
+6. View Controls ............................................... |gh-review-view|
+7. Configuration ............................................... |gh-review-config|
+
+===============================================================================
+1. Introduction                                                   *gh-review-intro*
+
+gh-review.nvim adds GitHub pull request review workflow on top of
+diffview.nvim.
+
+Use it to:
+
+- open PRs by URL or number
+- review inline threads inside diff panes
+- reply, edit, resolve, and submit reviews
+- triage PRs from an inbox buffer
+- drive Diffview layouts and file-panel actions from review-focused mappings
+
+Dependency:
+
+- Requires |diffview.nvim|
+
+Open this help anytime with: >
+  :GhReviewHelp
+<
+
+===============================================================================
+2. Commands                                                   *gh-review-commands*
+
+                                                        *:GhReviewOpen*
+:GhReviewOpen {url-or-number}
+    Open a PR in Diffview.
+
+                                                     *:GhReviewThreads*
+:GhReviewThreads
+    Toggle PR thread list panel.
+
+                                                      *:GhReviewSubmit*
+:GhReviewSubmit
+    Submit PR review.
+
+                                                       *:GhReviewInbox*
+:GhReviewInbox
+    Open PR inbox.
+
+                                                 *:GhReviewCycleLayout*
+:GhReviewCycleLayout
+    Cycle Diffview layout for current PR.
+
+                                                 *:GhReviewToggleFiles*
+:GhReviewToggleFiles
+    Toggle Diffview file panel.
+
+                                                  *:GhReviewFocusFiles*
+:GhReviewFocusFiles
+    Focus Diffview file panel.
+
+                                                *:GhReviewFocusThreads*
+:GhReviewFocusThreads
+    Open or focus PR thread list.
+
+                                                        *:GhReviewHelp*
+:GhReviewHelp
+    Open this help page.
+
+===============================================================================
+3. Review Keymaps                                             *gh-review-keymaps*
+
+Default mappings in Diffview diff panes: >
+  pa    add inline comment
+  pr    reply to nearest thread
+  pe    edit your latest comment in nearest thread
+  pR    resolve or unresolve nearest thread
+  pt    expand or collapse nearest inline thread
+  pv    open nearest thread popup
+  pl    toggle thread list
+  ps    submit review
+  pB    toggle file panel
+  pE    focus file panel
+  pX    cycle layout
+  ]c    next thread in current file
+  [c    previous thread in current file
+  q     close review view
+<
+
+These are configurable via |gh-review-config|.
+
+===============================================================================
+4. Inbox                                                        *gh-review-inbox*
+
+Open inbox: >
+  :GhReviewInbox
+<
+
+Keys: >
+  <CR>  open PR in Diffview
+  a     assign yourself as reviewer
+  o     open PR in browser
+  r     refresh inbox
+  q     close inbox
+<
+
+===============================================================================
+5. Thread List                                                *gh-review-threads*
+
+Open thread list from review with `pl` or `:GhReviewFocusThreads`.
+
+Keys: >
+  <CR>   jump to thread in Diffview
+  j/k    move between thread entries
+  <Tab>  expand or collapse thread preview
+  v      open full popup thread view
+  r      reply
+  e      edit your latest comment in thread
+  R      resolve or unresolve thread
+  f      cycle filters: all, open, mine, resolved, outdated
+  q      close panel
+<
+
+===============================================================================
+6. View Controls                                                 *gh-review-view*
+
+gh-review.nvim uses Diffview as diff backend.
+
+Useful view commands: >
+  :GhReviewCycleLayout
+  :GhReviewToggleFiles
+  :GhReviewFocusFiles
+  :GhReviewFocusThreads
+<
+
+Common layouts for standard PR diffs:
+
+- `diff2_horizontal`
+- `diff2_vertical`
+
+Diffview can also cycle layouts with `g<C-x>`, but gh-review.nvim exposes the
+same capability with review-centric commands and mappings.
+
+===============================================================================
+7. Configuration                                               *gh-review-config*
+
+Example: >lua
+  require("gh-review").setup({
+    gh_host = "github.example.com",
+    view = {
+      open_files = false,
+      open_threads = false,
+      focus = "diff", -- diff | files | threads
+      threads = {
+        mode = "split", -- split | popup
+        width = 72,
+        height = 22,
+        position = "right", -- left | right for split mode
+      },
+    },
+    inbox = {
+      repos = {
+        "owner/repo-one",
+        "owner/repo-two",
+      },
+      limit = 100,
+    },
+    keymaps = {
+      add_comment = "pa",
+      reply = "pr",
+      edit_comment = "pe",
+      toggle_resolve = "pR",
+      toggle_expand = "pt",
+      next_thread = "]c",
+      prev_thread = "[c",
+      open_popup = "pv",
+      submit_review = "ps",
+      open_threads = "pl",
+      toggle_files = "pB",
+      focus_files = "pE",
+      cycle_layout = "pX",
+      close = "q",
+    },
+  })
+<
+
+View config:
+
+- `view.open_files`: open Diffview file panel when PR loads
+- `view.open_threads`: open thread list when PR loads
+- `view.focus`: one of `diff`, `files`, `threads`
+- `view.threads.mode`: `split` or `popup`
+- `view.threads.width`: split width or popup width
+- `view.threads.height`: popup height
+- `view.threads.position`: `left` or `right` for split mode
+
+Inbox config:
+
+- `inbox.repos`: list of `owner/repo` strings
+- `inbox.limit`: maximum PR count fetched
+
+vim:tw=78:ts=8:noet:ft=help:norl:
