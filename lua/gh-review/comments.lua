@@ -11,17 +11,17 @@ local _active = {} -- per buffer: bufnr -> thread_key
 local _author_groups = {}
 local _next_author_group = 1
 local _author_palette = {
-  "#cba6f7",
-  "#f5c2e7",
   "#f38ba8",
   "#89b4fa",
-  "#94e2d5",
-  "#f9e2af",
   "#a6e3a1",
   "#fab387",
+  "#cba6f7",
+  "#f9e2af",
   "#74c7ec",
-  "#b4befe",
+  "#f5c2e7",
+  "#94e2d5",
   "#eba0ac",
+  "#b4befe",
   "#89dceb",
 }
 
