@@ -16,6 +16,7 @@ local _filter = "all"
 local _me = nil
 local _thread_starts = {}
 local _current_file = nil
+local _reply_meta_lines = {}
 
 -- ── buffer name ───────────────────────────────────────────────────────────────
 
@@ -33,10 +34,10 @@ local function rel_time(iso)
   })
   if not ok then return "" end
   local diff = math.max(0, os.time() - epoch)
-  if diff < 3600    then return math.floor(diff/60)     .. "m ago"
-  elseif diff < 86400   then return math.floor(diff/3600)   .. "h ago"
-  elseif diff < 604800  then return math.floor(diff/86400)  .. "d ago"
-  else                       return math.floor(diff/604800) .. "w ago"
+  if diff < 3600    then return math.floor(diff/60)     .. "m"
+  elseif diff < 86400   then return math.floor(diff/3600)   .. "h"
+  elseif diff < 604800  then return math.floor(diff/86400)  .. "d"
+  else                       return math.floor(diff/604800) .. "w"
   end
 end
 
@@ -167,17 +168,66 @@ local function highlight_time_span(buf, ns, line_0, text)
 end
 
 local function highlight_reply_span(buf, ns, line_0, text)
-  local icon_col = text:find("↺", 1, true)
+  local icon_col = text:find("", 1, true)
   if icon_col then
     vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewReplyCount", line_0, icon_col - 1, icon_col)
   end
 
-  local replies = text:match("↺%s+(%d+)")
+  local replies = text:match("%s+(%d+)")
   if not replies then return end
-  local start_col = text:find("↺ " .. replies, 1, true)
+  local start_col = text:find(" " .. replies, 1, true)
   if not start_col then return end
   local num_col = start_col + 2
   vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewReplyCount", line_0, num_col, num_col + #replies)
+end
+
+local function highlight_reply_meta(buf, ns, line_0, text)
+  local icon_col = text:find("", 1, true)
+  if icon_col then
+    vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewReplyCount", line_0, icon_col - 1, icon_col)
+  end
+
+  local replies = text:match("%s+(%d+)")
+  if not replies then return end
+  local start_col = text:find(replies, 1, true)
+  if not start_col then return end
+  vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewReplyCount", line_0, start_col - 1, start_col - 1 + #replies)
+end
+
+local function highlight_summary_metrics(buf, ns, line_0, text)
+  local segments = {
+    { icon = "", group = "GhReviewCount" },
+    { icon = "", group = "GhReviewResolved" },
+    { icon = "󰛨", group = "GhReviewOutdated" },
+    { icon = "", group = "GhReviewAuthor" },
+  }
+
+  for _, segment in ipairs(segments) do
+    local col = text:find(segment.icon, 1, true)
+    if col then
+      vim.api.nvim_buf_add_highlight(buf, ns, segment.group, line_0, col - 1, col)
+      local num = text:match(vim.pesc(segment.icon) .. "%s+(%d+)")
+      if num then
+        local num_col = text:find(segment.icon .. " " .. num, 1, true)
+        if num_col then
+          local start = num_col + #segment.icon + 1
+          vim.api.nvim_buf_add_highlight(buf, ns, segment.group, line_0, start, start + #num)
+        end
+      end
+    end
+  end
+end
+
+local function highlight_action_row(buf, ns, line_0, text)
+  for token in text:gmatch("%S+") do
+    local key = token:match("^(<[^>]+>)") or token:match("^([a-zA-Z])$")
+    if key then
+      local col = text:find(token, 1, true)
+      if col then
+        vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, col - 1, col - 1 + #token)
+      end
+    end
+  end
 end
 
 local function first_nonblank_lines(text, limit)
@@ -202,6 +252,7 @@ local function render(state)
   local lines   = {}
   _line_to_thread = {}
   _thread_starts = {}
+  _reply_meta_lines = {}
 
   -- Header
   local header = string.format("PR #%d  %s", pr.number, one_line(pr.title, 56))
@@ -225,7 +276,7 @@ local function render(state)
     filter_label = "file:" .. clip_middle(_current_file, 18)
   end
   add_plain_line(lines, string.format(
-    "filter %s  |  %d/%d shown  |   %d  ✓ %d  ! %d   %d",
+    "filter %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
     filter_label, visible_count, #threads, open_count, resolved_count, outdated_count, mine_count
   ))
   add_plain_line(lines, "<cr> open  <tab> details  r reply  e edit  R toggle  v full  f filter  q close")
@@ -243,7 +294,7 @@ local function render(state)
 
     -- Status glyph + path:line
     local glyph = thread.is_resolved and "✓" or (thread.is_outdated and "!" or "●")
-    local path_info = string.format("%s:%s", clip_middle(thread.path or "?", 44), thread.line or "?")
+    local path_info = string.format("%s:%s", thread.path or "?", thread.line or "?")
     local thread_comments = thread.comments or {}
     local root = thread_comments[1]
     local preview = one_line(root and root.body or "", 68)
@@ -251,7 +302,7 @@ local function render(state)
     local reply_label = tostring(reply_count)
     local head = string.format("  %s  %s", glyph, path_info)
     local can_edit = editable_comment(thread) ~= nil
-    local meta = string.format("     %s  ·  %s  ·  ↺ %s",
+    local meta = string.format("     %s  ·  %s  ·   %s",
       root and root.author or "unknown",
       root and rel_time(root.created_at) or "",
       reply_label
@@ -267,11 +318,13 @@ local function render(state)
       local limit = math.min(#thread_comments, start_index + 1)
       for ci = start_index, limit do
         local comment = thread_comments[ci]
-        local prefix = "       │ "
-        local author_suffix = comment.author == _me and " (you)" or ""
-        add_thread_line(lines, ti, string.format("       ├ %s%s  ·  %s", comment.author, author_suffix, rel_time(comment.created_at)))
-        for _, body_line in ipairs(first_nonblank_lines(comment.body, 3)) do
-          add_thread_line(lines, ti, prefix .. body_line)
+        add_thread_line(lines, ti, string.format("       • %s  ·  %s", comment.author, rel_time(comment.created_at)))
+        _reply_meta_lines[#lines] = {
+          author = comment.author,
+          age = rel_time(comment.created_at),
+        }
+        for _, body_line in ipairs(first_nonblank_lines(comment.body, 2)) do
+          add_thread_line(lines, ti, "         " .. body_line)
         end
         if ci < limit then
           add_thread_line(lines, ti, "")
@@ -315,6 +368,8 @@ local function render(state)
   vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBorder", 1, 0, -1)
   vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewMetric", 2, 0, -1)
   vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", 3, 0, -1)
+  highlight_summary_metrics(_buf, ns, 2, lines[3] or "")
+  highlight_action_row(_buf, ns, 3, lines[4] or "")
   local filter_col = (lines[3] or ""):find(_filter, 1, true)
   if filter_col then
     vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewFilter", 2, filter_col - 1, filter_col - 1 + #_filter)
@@ -344,18 +399,17 @@ local function render(state)
         highlight_author_span(_buf, ns, line_0, text, root and root.author or "unknown")
         highlight_time_span(_buf, ns, line_0, text)
         highlight_reply_span(_buf, ns, line_0, text)
-      elseif text:match("^%s+[│├▸] ") then
+      elseif _reply_meta_lines[li] then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
-        local author = text:match("^%s+[│├▸] ([^%s]+)")
-        highlight_author_span(_buf, ns, line_0, text, author)
+        highlight_author_span(_buf, ns, line_0, text, _reply_meta_lines[li].author)
         highlight_time_span(_buf, ns, line_0, text)
-        local marker = text:match("^%s+([│├▸])")
-        if marker then
-          local marker_col = text:find(marker, 1, true)
-          if marker_col then
-            vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewGuide", line_0, marker_col - 1, marker_col)
-          end
+        local marker_col = text:find("•", 1, true)
+        if marker_col then
+          vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewGuide", line_0, marker_col - 1, marker_col)
         end
+      elseif text:match("%s+%d+") then
+        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
+        highlight_reply_meta(_buf, ns, line_0, text)
       else
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
       end

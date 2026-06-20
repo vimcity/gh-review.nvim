@@ -10,20 +10,24 @@ local _popup = { buf = nil, win = nil, thread_id = nil }
 local _active = {} -- per buffer: bufnr -> thread_key
 local _author_palette = {
   "#cba6f7",
+  "#f5c2e7",
+  "#f38ba8",
   "#89b4fa",
   "#94e2d5",
   "#f9e2af",
-  "#f5c2e7",
   "#a6e3a1",
   "#fab387",
   "#74c7ec",
+  "#b4befe",
+  "#eba0ac",
+  "#89dceb",
 }
 
 local function author_group(author)
   author = author or "unknown"
-  local hash = 0
+  local hash = 5381
   for i = 1, #author do
-    hash = (hash + author:byte(i) * i) % 2147483647
+    hash = ((hash * 33) + author:byte(i)) % 2147483647
   end
   return "GhReviewAuthor" .. tostring((hash % #_author_palette) + 1)
 end
@@ -35,7 +39,12 @@ end
 function M.time_highlight(age)
   if not age or age == "" then return "GhReviewTime" end
   if age:match("m$") or age:match("h$") then return "GhReviewTimeRecent" end
-  if age:match("d$") then return "GhReviewTimeStale" end
+  local days = tonumber(age:match("^(%d+)d$"))
+  if days then
+    if days < 2 then return "GhReviewTimeRecent" end
+    if days < 4 then return "GhReviewTimeStale" end
+    return "GhReviewTimeOld"
+  end
   if age:match("w$") then return "GhReviewTimeOld" end
   return "GhReviewTime"
 end
@@ -45,13 +54,13 @@ function M.setup_highlights()
   hi(0, "GhReviewBorder",   { fg = "#585b70", default = true })
   hi(0, "GhReviewAuthor",   { fg = "#cba6f7", bold = true, default = true })
   hi(0, "GhReviewTime",     { fg = "#6c7086", default = true })
-  hi(0, "GhReviewTimeRecent", { fg = "#94e2d5", bold = true, default = true })
+  hi(0, "GhReviewTimeRecent", { fg = "#a6e3a1", bold = true, default = true })
   hi(0, "GhReviewTimeStale", { fg = "#f9e2af", default = true })
   hi(0, "GhReviewTimeOld", { fg = "#f38ba8", default = true })
   hi(0, "GhReviewResolved", { fg = "#a6e3a1", default = true })
   hi(0, "GhReviewOutdated", { fg = "#f9e2af", default = true })
   hi(0, "GhReviewBody",     { fg = "#cdd6f4", default = true })
-  hi(0, "GhReviewPath",     { fg = "#cdd6f4", bold = true, default = true })
+  hi(0, "GhReviewPath",     { fg = "#cba6f7", default = true })
   hi(0, "GhReviewGuide",    { fg = "#45475a", default = true })
   hi(0, "GhReviewCount",    { fg = "#89b4fa", default = true })
   hi(0, "GhReviewDim",      { fg = "#7f849c", default = true })
@@ -407,15 +416,15 @@ end
 local function thread_markdown(thread)
   local out = {}
   local status = thread.is_resolved and "resolved" or thread.is_outdated and "outdated" or "open"
-  table.insert(out, string.format("Thread  %s:%s", thread.path or "?", thread.line or "?"))
+  table.insert(out, string.format("# %s:%s", thread.path or "?", thread.line or "?"))
   table.insert(out, "")
-  table.insert(out, string.format("%s", status))
+  table.insert(out, string.format("%s side, %s", thread.side == "LEFT" and "base" or "head", status))
   table.insert(out, "")
   for i, comment in ipairs(thread.comments) do
-    local prefix = comment.reply_to_id and "reply" or "comment"
+    local prefix = comment.reply_to_id and "## Reply" or "## Comment"
     table.insert(out, string.format("%s %d", prefix, i))
     table.insert(out, "")
-    table.insert(out, string.format("%s  ·  %s", comment.author or "unknown", rel_time(comment.created_at)))
+    table.insert(out, string.format("**%s** · %s", comment.author or "unknown", rel_time(comment.created_at)))
     table.insert(out, "")
     for _, line in ipairs(vim.split(sanitize_text(comment.body), "\n", { plain = true })) do
       table.insert(out, line)
@@ -478,7 +487,7 @@ function M.open_popup(thread)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "gh-review-thread"
+  vim.bo[buf].filetype = "markdown"
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, thread_markdown(thread))
 
@@ -502,14 +511,14 @@ function M.open_popup(thread)
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = "no"
-  vim.wo[win].conceallevel = 0
+  vim.wo[win].conceallevel = 2
   vim.bo[buf].modifiable = false
 
   local popup_ns = vim.api.nvim_create_namespace("gh_review_popup")
   vim.api.nvim_buf_clear_namespace(buf, popup_ns, 0, -1)
   local popup_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i, text in ipairs(popup_lines) do
-    local author = text:match("^([^%s][^·]+)%s+·")
+    local author = text:match("^%*%*([^*]+)%*%*%s+·")
     if author then
       local start_col = text:find(author, 1, true)
       if start_col then
@@ -522,15 +531,22 @@ function M.open_popup(thread)
           vim.api.nvim_buf_add_highlight(buf, popup_ns, M.time_highlight(age), i - 1, age_col - 1, age_col - 1 + #age)
         end
       end
-    elseif text:match("^Thread%s+") then
+    elseif text:match("^# ") then
       vim.api.nvim_buf_add_highlight(buf, popup_ns, "GhReviewMetric", i - 1, 0, -1)
-    elseif text:match("^open$") or text:match("^resolved$") or text:match("^outdated$") then
-      local hl = text == "resolved" and "GhReviewResolved" or (text == "outdated" and "GhReviewOutdated" or "GhReviewCount")
-      vim.api.nvim_buf_add_highlight(buf, popup_ns, hl, i - 1, 0, -1)
-    elseif text:match("^reply ") or text:match("^comment ") then
+    elseif text:match("^## ") then
       vim.api.nvim_buf_add_highlight(buf, popup_ns, "GhReviewAction", i - 1, 0, -1)
+    elseif text:match("resolved$") or text:match("outdated$") or text:match("open$") then
+      local hl = text:match("resolved$") and "GhReviewResolved" or (text:match("outdated$") and "GhReviewOutdated" or "GhReviewCount")
+      vim.api.nvim_buf_add_highlight(buf, popup_ns, hl, i - 1, 0, -1)
     end
   end
+
+  pcall(function()
+    local ok, rm = pcall(require, "render-markdown")
+    if ok and rm and rm.enable then
+      rm.enable(buf)
+    end
+  end)
 
   vim.keymap.set("n", "q", M.close_popup, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", M.close_popup, { buffer = buf, silent = true })
