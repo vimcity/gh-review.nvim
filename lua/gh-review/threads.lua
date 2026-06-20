@@ -250,6 +250,7 @@ local function render(state)
   local threads = state.threads or {}
   local pr      = state.pr
   local lines   = {}
+  comments.set_author_context(threads)
   _line_to_thread = {}
   _thread_starts = {}
   _reply_meta_lines = {}

@@ -8,6 +8,8 @@ local NS = vim.api.nvim_create_namespace("gh_review_comments")
 local _expanded = {}
 local _popup = { buf = nil, win = nil, thread_id = nil }
 local _active = {} -- per buffer: bufnr -> thread_key
+local _author_groups = {}
+local _next_author_group = 1
 local _author_palette = {
   "#cba6f7",
   "#f5c2e7",
@@ -23,17 +25,27 @@ local _author_palette = {
   "#89dceb",
 }
 
-local function author_group(author)
+local function assign_author_group(author)
   author = author or "unknown"
-  local hash = 5381
-  for i = 1, #author do
-    hash = ((hash * 33) + author:byte(i)) % 2147483647
+  if not _author_groups[author] then
+    _author_groups[author] = "GhReviewAuthor" .. tostring(_next_author_group)
+    _next_author_group = (_next_author_group % #_author_palette) + 1
   end
-  return "GhReviewAuthor" .. tostring((hash % #_author_palette) + 1)
+  return _author_groups[author]
+end
+
+function M.set_author_context(threads)
+  _author_groups = {}
+  _next_author_group = 1
+  for _, thread in ipairs(threads or {}) do
+    for _, comment in ipairs(thread.comments or {}) do
+      assign_author_group(comment.author)
+    end
+  end
 end
 
 function M.author_highlight(author)
-  return author_group(author)
+  return assign_author_group(author)
 end
 
 function M.time_highlight(age)
@@ -336,6 +348,7 @@ end
 function M.render(threads)
   M.clear_all()
   if not threads or #threads == 0 then return end
+  M.set_author_context(threads)
   local diff_wins = get_diff_wins()
   if #diff_wins == 0 then return end
   for _, dw in ipairs(diff_wins) do
@@ -355,6 +368,7 @@ end
 
 function M.render_for_buf(buf, threads)
   if not threads or #threads == 0 then return end
+  M.set_author_context(threads)
   M.clear(buf)
   local diff_wins = get_diff_wins()
   for _, thread in ipairs(threads) do
