@@ -28,7 +28,6 @@ M.config = {
     reply          = "pr",   -- reply to thread nearest cursor
     edit_comment   = "pe",   -- edit your most recent comment in nearest thread
     toggle_resolve = "pR",   -- resolve / unresolve thread nearest cursor
-    toggle_expand  = "pt",   -- toggle inline expanded/collapsed summary
     next_thread    = "]c",   -- jump to next thread in current file
     prev_thread    = "[c",   -- jump to prev thread in current file
     open_popup     = "pv",   -- open full thread popup
@@ -88,7 +87,6 @@ function M._setup_diffpane_autocmd()
       vim.keymap.set("n", km.reply,          rev.reply_at_cursor, o)
       vim.keymap.set("n", km.edit_comment,   rev.edit_comment_at_cursor, o)
       vim.keymap.set("n", km.toggle_resolve, rev.toggle_resolve, o)
-      vim.keymap.set("n", km.toggle_expand,  rev.toggle_expanded_at_cursor, o)
       vim.keymap.set("n", km.next_thread,    rev.next_thread,    o)
       vim.keymap.set("n", km.prev_thread,    rev.prev_thread,    o)
       vim.keymap.set("n", km.open_popup,     rev.open_thread_popup, o)

@@ -5,7 +5,6 @@ local M = {}
 local dv = require("gh-review.diffview")
 
 local NS = vim.api.nvim_create_namespace("gh_review_comments")
-local _expanded = {}
 local _popup = { buf = nil, win = nil, thread_id = nil }
 local _active = {} -- per buffer: bufnr -> thread_key
 local _author_groups = {}
@@ -142,15 +141,6 @@ local function thread_key(thread)
   return thread.id or (thread.path or "?") .. ":" .. tostring(thread.line or 1)
 end
 
-function M.is_expanded(thread)
-  return _expanded[thread_key(thread)] == true
-end
-
-function M.toggle_expanded(thread)
-  local key = thread_key(thread)
-  _expanded[key] = not _expanded[key]
-end
-
 function M.set_active(buf, thread)
   if not buf or not thread then return end
   _active[buf] = thread_key(thread)
@@ -164,12 +154,7 @@ function M.is_active(buf, thread)
   return _active[buf] == thread_key(thread)
 end
 
-function M.collapse_all()
-  _expanded = {}
-end
-
 function M.reset()
-  _expanded = {}
   _active = {}
   M.close_popup()
 end
@@ -193,8 +178,7 @@ local function render_summary(thread, active, width)
   local preview = wrapped[1] or ""
   local truncated = #wrapped > 1
   if truncated then preview = preview .. "…" end
-  local expandable = truncated or replies > 0 or (root and root.body and root.body:find("\n", 1, true))
-  local prefix = expandable and (M.is_expanded(thread) and "▾" or "▸") or "•"
+  local prefix = "•"
   local marker_hl = active and "GhReviewAuthor" or "GhReviewCount"
 
   return {
@@ -210,71 +194,10 @@ local function render_summary(thread, active, width)
   }
 end
 
-local function render_expanded(thread, width)
-  local lines = render_summary(thread, true, width)
-  local inner = math.max(width - 6, 20)
-  local comments = thread.comments or {}
-
-  table.insert(lines, {
-    { "  │ ", "GhReviewGuide" },
-    { "r reply  e edit  R resolve  v view", "GhReviewAction" },
-  })
-
-  for ci, comment in ipairs(comments) do
-    local is_reply = ci > 1 or comment.reply_to_id ~= nil
-    local branch = is_reply and "  ├ " or "  │ "
-    local name = comment.author or "unknown"
-    local age = rel_time(comment.created_at)
-
-      table.insert(lines, {
-        { branch, "GhReviewGuide" },
-        { name, M.author_highlight(name) },
-        { age ~= "" and (" · " .. age) or "", M.time_highlight(age) },
-      })
-
-    local shown = 0
-    for _, body_line in ipairs(wrap(comment.body or "", inner)) do
-      if body_line ~= "" then
-        table.insert(lines, {
-          { "  │ ", "GhReviewGuide" },
-          { body_line, "GhReviewBody" },
-        })
-        shown = shown + 1
-      end
-      if shown >= 6 then
-        table.insert(lines, {
-          { "  │ ", "GhReviewGuide" },
-          { "...", "GhReviewDim" },
-        })
-        break
-      end
-    end
-
-    if ci < #comments then
-      table.insert(lines, {
-        { "  │", "GhReviewGuide" },
-        { "", "GhReviewBody" },
-      })
-    end
-  end
-
-  if #comments == 0 then
-    table.insert(lines, {
-      { "  │ ", "GhReviewGuide" },
-      { "No comments in this thread.", "GhReviewDim" },
-    })
-  end
-
-  return lines
-end
-
 local function score_thread_distance(thread, cursor_line)
   if not cursor_line then return 0 end
   local distance = math.abs((thread.line or 1) - cursor_line)
   if distance == 0 then return 0 end
-  if M.is_expanded(thread) and distance <= math.max(2, #(thread.comments or {}) * 4) then
-    return distance
-  end
   if distance <= 2 then
     return distance
   end
@@ -325,9 +248,7 @@ local function place_thread(thread, diff_wins)
       local active = M.is_active(dw.buf, thread)
       local width = math.floor(vim.api.nvim_win_get_width(dw.win) * 0.9)
       local anchor = thread.is_resolved and "✓ " or (thread.is_outdated and "! " or "● ")
-      local virt_lines = M.is_expanded(thread)
-        and render_expanded(thread, width)
-        or render_summary(thread, active, width)
+      local virt_lines = render_summary(thread, active, width)
       vim.api.nvim_buf_set_extmark(dw.buf, NS, target, 0, {
         virt_lines = virt_lines,
         virt_lines_above = false,

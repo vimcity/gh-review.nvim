@@ -146,19 +146,6 @@ function M.reply_at_cursor()
   })
 end
 
-function M.toggle_expanded_at_cursor()
-  local s = require_state()
-  if not s then return end
-  local c_mod = require("gh-review.comments")
-  local thread = c_mod.thread_at_cursor(s.threads)
-  if not thread then
-    vim.notify("gh-review: no thread near cursor", vim.log.levels.WARN)
-    return
-  end
-  c_mod.toggle_expanded(thread)
-  c_mod.render(s.threads)
-end
-
 function M.open_thread_popup()
   local s = require_state()
   if not s then return end

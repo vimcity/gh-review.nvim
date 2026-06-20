@@ -134,7 +134,6 @@ require("gh-review").setup({
     reply = "pr",
     edit_comment = "pe",
     toggle_resolve = "pR",
-    toggle_expand = "pt",
     next_thread = "]c",
     prev_thread = "[c",
     open_popup = "pv",
@@ -176,7 +175,6 @@ Thread panel keys:
 
 - `<CR>` jump to thread location
 - `j` / `k` move between thread entries
-- `<Tab>` toggle details
 - `v` open full thread popup
 - `r` reply
 - `e` edit your latest comment

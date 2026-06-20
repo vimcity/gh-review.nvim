@@ -11,12 +11,10 @@ local comments = require("gh-review.comments")
 local _buf   = nil  -- the thread list buffer
 local _win   = nil  -- the window showing it
 local _state = nil  -- reference to current pr state
-local _expanded_thread = nil
 local _filter = "all"
 local _me = nil
 local _thread_starts = {}
 local _current_file = nil
-local _reply_meta_lines = {}
 
 -- ── buffer name ───────────────────────────────────────────────────────────────
 
@@ -138,19 +136,8 @@ local function add_plain_line(lines, text)
   table.insert(lines, text)
 end
 
-local function highlight_author_span(buf, ns, line_0, text, author, start_col_0, end_col_0)
+local function highlight_author_span(buf, ns, line_0, text, author)
   if not author or author == "" then return end
-  if start_col_0 and end_col_0 then
-    vim.api.nvim_buf_add_highlight(
-      buf,
-      ns,
-      require("gh-review.comments").author_highlight(author),
-      line_0,
-      start_col_0,
-      end_col_0
-    )
-    return
-  end
   local start_col = text:find(author, 1, true)
   if not start_col then return end
   vim.api.nvim_buf_add_highlight(
@@ -163,18 +150,7 @@ local function highlight_author_span(buf, ns, line_0, text, author, start_col_0,
   )
 end
 
-local function highlight_time_span(buf, ns, line_0, text, start_col_0, end_col_0, age)
-  if start_col_0 and end_col_0 and age and age ~= "" then
-    vim.api.nvim_buf_add_highlight(
-      buf,
-      ns,
-      require("gh-review.comments").time_highlight(age),
-      line_0,
-      start_col_0,
-      end_col_0
-    )
-    return
-  end
+local function highlight_time_span(buf, ns, line_0, text)
   local age = text:match("·%s+([%d]+[mhdw])")
   if not age then return end
   local start_col = text:find(age, 1, true)
@@ -187,21 +163,6 @@ local function highlight_time_span(buf, ns, line_0, text, start_col_0, end_col_0
     start_col - 1,
     start_col - 1 + #age
   )
-end
-
-local function highlight_peek_hint(buf, ns, line_0, text)
-  vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewDim", line_0, 0, -1)
-  local token_groups = {
-    ["v view"] = "GhReviewFilter",
-    ["r reply"] = "GhReviewAction",
-    ["e edit"] = "GhReviewAction",
-  }
-  for token, group in pairs(token_groups) do
-    local col = text:find(token, 1, true)
-    if col then
-      vim.api.nvim_buf_add_highlight(buf, ns, group, line_0, col - 1, col - 1 + #token)
-    end
-  end
 end
 
 local function highlight_reply_span(buf, ns, line_0, text)
@@ -291,18 +252,6 @@ local function highlight_filter_header(buf, ns, line_0, text, filter_value)
   end
 end
 
-local function first_nonblank_lines(text, limit)
-  local result = {}
-  for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
-    line = line:gsub("\t", "  "):gsub("^%s+", ""):gsub("%s+$", "")
-    if line ~= "" then
-      table.insert(result, one_line(line, 82))
-    end
-    if #result >= limit then break end
-  end
-  return result
-end
-
 -- ── render ────────────────────────────────────────────────────────────────────
 
 local function render(state)
@@ -314,7 +263,6 @@ local function render(state)
   comments.set_author_context(threads)
   _line_to_thread = {}
   _thread_starts = {}
-  _reply_meta_lines = {}
 
   -- Header
   local header = string.format("PR #%d  %s", pr.number, one_line(pr.title, 56))
@@ -342,7 +290,7 @@ local function render(state)
     "FILTER %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
     filter_value, visible_count, #threads, open_count, resolved_count, outdated_count, mine_count
   ))
-  add_plain_line(lines, "<cr> open  <tab> details  r reply  e edit  R toggle  v full  f filter  q close")
+  add_plain_line(lines, "<cr> open  r reply  e edit  R toggle  v view  f filter  q close")
   add_plain_line(lines, string.rep("─", 72))
   add_plain_line(lines, "")
 
@@ -364,7 +312,6 @@ local function render(state)
     local reply_count = math.max(0, #thread_comments - 1)
     local reply_label = tostring(reply_count)
     local head = string.format("  %s  %s", glyph, path_info)
-    local can_edit = editable_comment(thread) ~= nil
     local meta = string.format("     %s  ·  %s  ·   %s",
       root and root.author or "unknown",
       root and rel_time(root.created_at) or "",
@@ -373,42 +320,6 @@ local function render(state)
     add_thread_line(lines, ti, head)
     add_thread_line(lines, ti, meta)
     add_thread_line(lines, ti, "     " .. preview)
-
-    if _expanded_thread == ti then
-      add_thread_line(lines, ti, can_edit and "     peek: latest replies  •  r reply  e edit  v view" or "     peek: latest replies  •  r reply  v view")
-      add_thread_line(lines, ti, "")
-      local start_index = math.max(2, #thread_comments - 1)
-      local limit = math.min(#thread_comments, start_index + 1)
-      for ci = start_index, limit do
-        local comment = thread_comments[ci]
-        local age = rel_time(comment.created_at)
-        local text = string.format("       • %s  ·  %s", comment.author, age)
-        add_thread_line(lines, ti, text)
-        local author_start = text:find(comment.author or "unknown", 1, true) or 1
-        local age_start = age ~= "" and (text:find(age, 1, true) or author_start + #(comment.author or "unknown")) or nil
-        _reply_meta_lines[#lines] = {
-          author = comment.author,
-          age = age,
-          author_start = author_start - 1,
-          author_end = author_start - 1 + #(comment.author or "unknown"),
-          age_start = age_start and (age_start - 1) or nil,
-          age_end = age_start and (age_start - 1 + #age) or nil,
-        }
-        for _, body_line in ipairs(first_nonblank_lines(comment.body, 2)) do
-          add_thread_line(lines, ti, "         " .. body_line)
-        end
-        if ci < limit then
-          add_thread_line(lines, ti, "")
-        end
-      end
-      if #thread_comments <= 1 then
-        add_thread_line(lines, ti, "       no replies yet  •  r reply  v view")
-      elseif #thread_comments > limit then
-        add_thread_line(lines, ti, string.format("       +%d earlier  •  v view", start_index - 2))
-      else
-        add_thread_line(lines, ti, "       v view")
-      end
-    end
 
     table.insert(lines, "")
 
@@ -459,36 +370,8 @@ local function render(state)
         if path_start then
           vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewPath", line_0, path_start + 1, -1)
         end
-      elseif text:match("peek:%s") then
+      elseif text:match("r reply") or text:match("v view") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
-      elseif text:match("^%s+no replies yet") or text:match("^%s+%+%d+ earlier") or text:match("^%s+v view$") then
-        highlight_peek_hint(_buf, ns, line_0, text)
-      elseif text:match("r reply") or text:match("v view") or text:match("<tab> details") then
-        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
-      elseif _reply_meta_lines[li] then
-        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
-        highlight_author_span(
-          _buf,
-          ns,
-          line_0,
-          text,
-          _reply_meta_lines[li].author,
-          _reply_meta_lines[li].author_start,
-          _reply_meta_lines[li].author_end
-        )
-        highlight_time_span(
-          _buf,
-          ns,
-          line_0,
-          text,
-          _reply_meta_lines[li].age_start,
-          _reply_meta_lines[li].age_end,
-          _reply_meta_lines[li].age
-        )
-        local marker_col = text:find("•", 1, true)
-        if marker_col then
-          vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewGuide", line_0, marker_col - 1, marker_col)
-        end
       elseif text:match("^%s+%S+%s+·%s+") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
         local root = (thread.comments or {})[1]
@@ -753,17 +636,6 @@ function M._setup_keymaps()
   vim.keymap.set("n", "<cr>", function()
     local thread = current_thread()
     jump_to_thread(thread)
-  end, opts)
-
-  vim.keymap.set("n", "<Tab>", function()
-    local _, ti = current_thread()
-    if not ti then return end
-    if _expanded_thread == ti then
-      _expanded_thread = nil
-    else
-      _expanded_thread = ti
-    end
-    render(_state)
   end, opts)
 
   vim.keymap.set("n", "r", function()

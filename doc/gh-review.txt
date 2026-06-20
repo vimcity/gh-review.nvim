@@ -175,7 +175,6 @@ Example: >lua
       reply = "pr",
       edit_comment = "pe",
       toggle_resolve = "pR",
-      toggle_expand = "pt",
       next_thread = "]c",
       prev_thread = "[c",
       open_popup = "pv",
