@@ -219,13 +219,37 @@ local function highlight_summary_metrics(buf, ns, line_0, text)
 end
 
 local function highlight_action_row(buf, ns, line_0, text)
+  local key_end = 0
   for token in text:gmatch("%S+") do
-    local key = token:match("^(<[^>]+>)") or token:match("^([a-zA-Z])$")
-    if key then
-      local col = text:find(token, 1, true)
-      if col then
+    local col = text:find(token, key_end + 1, true)
+    if col then
+      if token:match("^<[^>]+>$") or token:match("^[a-zA-Z]$") then
         vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, col - 1, col - 1 + #token)
+        key_end = col - 1 + #token
       end
+    end
+  end
+end
+
+local function highlight_filter_header(buf, ns, line_0, text, filter_value)
+  local label = "FILTER"
+  local label_col = text:find(label, 1, true)
+  if label_col then
+    vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, label_col - 1, label_col - 1 + #label)
+  end
+
+  if filter_value and filter_value ~= "" then
+    local value_col = text:find(filter_value, 1, true)
+    if value_col then
+      vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, value_col - 1, value_col - 1 + #filter_value)
+    end
+  end
+
+  local shown_value = text:match("|%s+([^|]+)%s+shown")
+  if shown_value then
+    local shown_col = text:find(shown_value, 1, true)
+    if shown_col then
+      vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewMetric", line_0, shown_col - 1, shown_col - 1 + #shown_value)
     end
   end
 end
@@ -276,9 +300,10 @@ local function render(state)
   if _filter == "file" and _current_file then
     filter_label = "file:" .. clip_middle(_current_file, 18)
   end
+  local filter_value = string.upper(filter_label)
   add_plain_line(lines, string.format(
-    "filter %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
-    filter_label, visible_count, #threads, open_count, resolved_count, outdated_count, mine_count
+    "FILTER %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
+    filter_value, visible_count, #threads, open_count, resolved_count, outdated_count, mine_count
   ))
   add_plain_line(lines, "<cr> open  <tab> details  r reply  e edit  R toggle  v full  f filter  q close")
   add_plain_line(lines, string.rep("─", 72))
@@ -367,14 +392,11 @@ local function render(state)
   -- Header highlight
   vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAuthor", 0, 0, -1)
   vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBorder", 1, 0, -1)
-  vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewMetric", 2, 0, -1)
-  vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", 3, 0, -1)
+  vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewLabel", 2, 0, -1)
+  vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewValue", 3, 0, -1)
   highlight_summary_metrics(_buf, ns, 2, lines[3] or "")
   highlight_action_row(_buf, ns, 3, lines[4] or "")
-  local filter_col = (lines[3] or ""):find(_filter, 1, true)
-  if filter_col then
-    vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewFilter", 2, filter_col - 1, filter_col - 1 + #_filter)
-  end
+  highlight_filter_header(_buf, ns, 2, lines[3] or "", filter_value)
 
   -- Per-thread highlights
   for li, ti in pairs(_line_to_thread) do
@@ -394,12 +416,6 @@ local function render(state)
         end
       elseif text:match("peek:%s") or text:match("r reply") or text:match("v full") or text:match("<tab> details") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
-      elseif text:match("^%s+%S+%s+·%s+") then
-        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
-        local root = (thread.comments or {})[1]
-        highlight_author_span(_buf, ns, line_0, text, root and root.author or "unknown")
-        highlight_time_span(_buf, ns, line_0, text)
-        highlight_reply_span(_buf, ns, line_0, text)
       elseif _reply_meta_lines[li] then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
         highlight_author_span(_buf, ns, line_0, text, _reply_meta_lines[li].author)
@@ -408,6 +424,12 @@ local function render(state)
         if marker_col then
           vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewGuide", line_0, marker_col - 1, marker_col)
         end
+      elseif text:match("^%s+%S+%s+·%s+") then
+        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
+        local root = (thread.comments or {})[1]
+        highlight_author_span(_buf, ns, line_0, text, root and root.author or "unknown")
+        highlight_time_span(_buf, ns, line_0, text)
+        highlight_reply_span(_buf, ns, line_0, text)
       elseif text:match("%s+%d+") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
         highlight_reply_meta(_buf, ns, line_0, text)
