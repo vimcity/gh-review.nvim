@@ -138,8 +138,19 @@ local function add_plain_line(lines, text)
   table.insert(lines, text)
 end
 
-local function highlight_author_span(buf, ns, line_0, text, author)
+local function highlight_author_span(buf, ns, line_0, text, author, start_col_0, end_col_0)
   if not author or author == "" then return end
+  if start_col_0 and end_col_0 then
+    vim.api.nvim_buf_add_highlight(
+      buf,
+      ns,
+      require("gh-review.comments").author_highlight(author),
+      line_0,
+      start_col_0,
+      end_col_0
+    )
+    return
+  end
   local start_col = text:find(author, 1, true)
   if not start_col then return end
   vim.api.nvim_buf_add_highlight(
@@ -152,7 +163,18 @@ local function highlight_author_span(buf, ns, line_0, text, author)
   )
 end
 
-local function highlight_time_span(buf, ns, line_0, text)
+local function highlight_time_span(buf, ns, line_0, text, start_col_0, end_col_0, age)
+  if start_col_0 and end_col_0 and age and age ~= "" then
+    vim.api.nvim_buf_add_highlight(
+      buf,
+      ns,
+      require("gh-review.comments").time_highlight(age),
+      line_0,
+      start_col_0,
+      end_col_0
+    )
+    return
+  end
   local age = text:match("·%s+([%d]+[mhdw])")
   if not age then return end
   local start_col = text:find(age, 1, true)
@@ -165,6 +187,21 @@ local function highlight_time_span(buf, ns, line_0, text)
     start_col - 1,
     start_col - 1 + #age
   )
+end
+
+local function highlight_peek_hint(buf, ns, line_0, text)
+  vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewDim", line_0, 0, -1)
+  local token_groups = {
+    ["v full"] = "GhReviewFilter",
+    ["r reply"] = "GhReviewAction",
+    ["e edit"] = "GhReviewAction",
+  }
+  for token, group in pairs(token_groups) do
+    local col = text:find(token, 1, true)
+    if col then
+      vim.api.nvim_buf_add_highlight(buf, ns, group, line_0, col - 1, col - 1 + #token)
+    end
+  end
 end
 
 local function highlight_reply_span(buf, ns, line_0, text)
@@ -344,10 +381,16 @@ local function render(state)
       local limit = math.min(#thread_comments, start_index + 1)
       for ci = start_index, limit do
         local comment = thread_comments[ci]
-        add_thread_line(lines, ti, string.format("       • %s  ·  %s", comment.author, rel_time(comment.created_at)))
+        local age = rel_time(comment.created_at)
+        local text = string.format("       • %s  ·  %s", comment.author, age)
+        add_thread_line(lines, ti, text)
         _reply_meta_lines[#lines] = {
           author = comment.author,
-          age = rel_time(comment.created_at),
+          age = age,
+          author_start = 10,
+          author_end = 10 + #(comment.author or "unknown"),
+          age_start = 15 + #(comment.author or "unknown"),
+          age_end = 15 + #(comment.author or "unknown") + #age,
         }
         for _, body_line in ipairs(first_nonblank_lines(comment.body, 2)) do
           add_thread_line(lines, ti, "         " .. body_line)
@@ -357,11 +400,11 @@ local function render(state)
         end
       end
       if #thread_comments <= 1 then
-        add_thread_line(lines, ti, "       No replies yet. Press r to reply or v for full thread.")
+        add_thread_line(lines, ti, "       no replies yet  •  r reply  v full")
       elseif #thread_comments > limit then
-        add_thread_line(lines, ti, string.format("       +%d earlier replies. Press v for full thread.", start_index - 2))
+        add_thread_line(lines, ti, string.format("       +%d earlier  •  v full", start_index - 2))
       else
-        add_thread_line(lines, ti, "       Press v for full thread view.")
+        add_thread_line(lines, ti, "       v full")
       end
     end
 
@@ -414,12 +457,32 @@ local function render(state)
         if path_start then
           vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewPath", line_0, path_start + 1, -1)
         end
-      elseif text:match("peek:%s") or text:match("r reply") or text:match("v full") or text:match("<tab> details") then
+      elseif text:match("peek:%s") then
+        vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
+      elseif text:match("^%s+no replies yet") or text:match("^%s+%+%d+ earlier") or text:match("^%s+v full$") then
+        highlight_peek_hint(_buf, ns, line_0, text)
+      elseif text:match("r reply") or text:match("v full") or text:match("<tab> details") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
       elseif _reply_meta_lines[li] then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
-        highlight_author_span(_buf, ns, line_0, text, _reply_meta_lines[li].author)
-        highlight_time_span(_buf, ns, line_0, text)
+        highlight_author_span(
+          _buf,
+          ns,
+          line_0,
+          text,
+          _reply_meta_lines[li].author,
+          _reply_meta_lines[li].author_start,
+          _reply_meta_lines[li].author_end
+        )
+        highlight_time_span(
+          _buf,
+          ns,
+          line_0,
+          text,
+          _reply_meta_lines[li].age_start,
+          _reply_meta_lines[li].age_end,
+          _reply_meta_lines[li].age
+        )
         local marker_col = text:find("•", 1, true)
         if marker_col then
           vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewGuide", line_0, marker_col - 1, marker_col)
