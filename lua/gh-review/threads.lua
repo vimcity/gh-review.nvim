@@ -192,7 +192,7 @@ end
 local function highlight_peek_hint(buf, ns, line_0, text)
   vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewDim", line_0, 0, -1)
   local token_groups = {
-    ["v full"] = "GhReviewFilter",
+    ["v view"] = "GhReviewFilter",
     ["r reply"] = "GhReviewAction",
     ["e edit"] = "GhReviewAction",
   }
@@ -375,7 +375,7 @@ local function render(state)
     add_thread_line(lines, ti, "     " .. preview)
 
     if _expanded_thread == ti then
-      add_thread_line(lines, ti, can_edit and "     peek: latest replies  •  r reply  e edit  v full" or "     peek: latest replies  •  r reply  v full")
+      add_thread_line(lines, ti, can_edit and "     peek: latest replies  •  r reply  e edit  v view" or "     peek: latest replies  •  r reply  v view")
       add_thread_line(lines, ti, "")
       local start_index = math.max(2, #thread_comments - 1)
       local limit = math.min(#thread_comments, start_index + 1)
@@ -384,13 +384,15 @@ local function render(state)
         local age = rel_time(comment.created_at)
         local text = string.format("       • %s  ·  %s", comment.author, age)
         add_thread_line(lines, ti, text)
+        local author_start = text:find(comment.author or "unknown", 1, true) or 1
+        local age_start = age ~= "" and (text:find(age, 1, true) or author_start + #(comment.author or "unknown")) or nil
         _reply_meta_lines[#lines] = {
           author = comment.author,
           age = age,
-          author_start = 10,
-          author_end = 10 + #(comment.author or "unknown"),
-          age_start = 15 + #(comment.author or "unknown"),
-          age_end = 15 + #(comment.author or "unknown") + #age,
+          author_start = author_start - 1,
+          author_end = author_start - 1 + #(comment.author or "unknown"),
+          age_start = age_start and (age_start - 1) or nil,
+          age_end = age_start and (age_start - 1 + #age) or nil,
         }
         for _, body_line in ipairs(first_nonblank_lines(comment.body, 2)) do
           add_thread_line(lines, ti, "         " .. body_line)
@@ -400,11 +402,11 @@ local function render(state)
         end
       end
       if #thread_comments <= 1 then
-        add_thread_line(lines, ti, "       no replies yet  •  r reply  v full")
+        add_thread_line(lines, ti, "       no replies yet  •  r reply  v view")
       elseif #thread_comments > limit then
-        add_thread_line(lines, ti, string.format("       +%d earlier  •  v full", start_index - 2))
+        add_thread_line(lines, ti, string.format("       +%d earlier  •  v view", start_index - 2))
       else
-        add_thread_line(lines, ti, "       v full")
+        add_thread_line(lines, ti, "       v view")
       end
     end
 
@@ -459,9 +461,9 @@ local function render(state)
         end
       elseif text:match("peek:%s") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
-      elseif text:match("^%s+no replies yet") or text:match("^%s+%+%d+ earlier") or text:match("^%s+v full$") then
+      elseif text:match("^%s+no replies yet") or text:match("^%s+%+%d+ earlier") or text:match("^%s+v view$") then
         highlight_peek_hint(_buf, ns, line_0, text)
-      elseif text:match("r reply") or text:match("v full") or text:match("<tab> details") then
+      elseif text:match("r reply") or text:match("v view") or text:match("<tab> details") then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewAction", line_0, 0, -1)
       elseif _reply_meta_lines[li] then
         vim.api.nvim_buf_add_highlight(_buf, ns, "GhReviewBody", line_0, 0, -1)
