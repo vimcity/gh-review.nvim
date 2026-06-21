@@ -221,8 +221,11 @@ local function highlight_action_row(buf, ns, line_0, text)
   for token in text:gmatch("%S+") do
     local col = text:find(token, key_end + 1, true)
     if col then
-      if token:match("^<[^>]+>$") or token:match("^[a-zA-Z]$") then
-        vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, col - 1, col - 1 + #token)
+      if token:match("^<[^>]+>$") then
+        vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewMetric", line_0, col - 1, col - 1 + #token)
+        key_end = col - 1 + #token
+      elseif token:match("^[a-zA-Z]$") then
+        vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewKey", line_0, col - 1, col - 1 + #token)
         key_end = col - 1 + #token
       end
     end
