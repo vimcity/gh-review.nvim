@@ -230,7 +230,7 @@ local function highlight_action_row(buf, ns, line_0, text)
 end
 
 local function highlight_filter_header(buf, ns, line_0, text, filter_value)
-  local label = "Filter"
+  local label = "FILTER"
   local label_col = text:find(label, 1, true)
   if label_col then
     vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, label_col - 1, label_col - 1 + #label)
@@ -287,7 +287,7 @@ local function render(state)
   end
   local filter_value = filter_label
   add_plain_line(lines, string.format(
-    "Filter %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
+    "FILTER %s  |  %d/%d shown  |   %d   %d  󰛨 %d   %d",
     filter_value, visible_count, #threads, open_count, resolved_count, outdated_count, mine_count
   ))
   add_plain_line(lines, "<cr> open  r reply  e edit  R toggle  v view  f filter  q close")
