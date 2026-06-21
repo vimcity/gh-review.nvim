@@ -239,7 +239,7 @@ local function highlight_filter_header(buf, ns, line_0, text, filter_value)
   if filter_value and filter_value ~= "" then
     local value_col = text:find(filter_value, 1, true)
     if value_col then
-      vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewFilter", line_0, value_col - 1, value_col - 1 + #filter_value)
+      vim.api.nvim_buf_add_highlight(buf, ns, "GhReviewValue", line_0, value_col - 1, value_col - 1 + #filter_value)
     end
   end
 
