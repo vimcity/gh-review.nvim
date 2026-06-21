@@ -283,7 +283,7 @@ local function render(state)
   local visible_count = count_visible_threads(threads)
   local filter_label = _filter
   if _filter == "file" and _current_file then
-    filter_label = "file:" .. clip_middle(_current_file, 18)
+    filter_label = "current diff"
   end
   local filter_value = string.upper(filter_label)
   add_plain_line(lines, string.format(
